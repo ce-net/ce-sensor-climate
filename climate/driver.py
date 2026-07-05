@@ -248,6 +248,15 @@ def select_driver(mode: str = "auto", buses=(1, 0)) -> Driver:
     if mode == "mock":
         return MockDriver()
 
+    # UNO Q: the sensor is on the STM32; read it via the Arduino Router bridge.
+    if mode in ("auto", "real", "bridge"):
+        from .bridge import detect_bridge  # lazy import
+        bridge = detect_bridge()
+        if bridge is not None:
+            return bridge
+        if mode == "bridge":
+            raise OSError("no AHT20 reading on the Arduino Router bridge (STM32 sketch flashed?)")
+
     if mode in ("auto", "real", "atech"):
         from .atech import detect_atech_serial  # lazy: avoids a circular import
         atech = detect_atech_serial()
@@ -259,5 +268,5 @@ def select_driver(mode: str = "auto", buses=(1, 0)) -> Driver:
         return real
 
     if mode in ("real", "atech", "i2c"):
-        raise OSError("no atech serial board or I2C temp/humidity sensor found")
+        raise OSError("no bridge, atech serial, or I2C temp/humidity sensor found")
     return MockDriver()

@@ -1,0 +1,25 @@
+[app]
+name = "ce-sensor-climate"
+version = "0.1.0"
+summary = "Cap-gated temperature + humidity sensor for the CE mesh (Python script ceapp)"
+runtime = "script"
+# Discovered by name/topic, never by node address. A consumer holds a capability and subscribes.
+provides = ["sensor.climate"]
+
+[script]
+interpreter = "python3"
+entry = "main.py"
+
+# A sensor is a pure producer. Every device runs it as a daemon; the single `ce` service
+# supervises + restarts it. No build step — edit main.py and reinstall.
+[daemon]
+enabled = true
+
+# Interpreted host process (like native): no sandbox, reaches the local node only.
+[sandbox]
+tier = "none"
+net = "mesh-only"
+
+[deps]
+requires = ["native"]
+capabilities = []

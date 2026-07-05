@@ -24,7 +24,7 @@ import threading
 import ce
 
 from capauth import authorizer_from_env
-from climate.driver import MockDriver
+from climate.driver import select_driver
 from climate.service import (
     ANNOUNCE_TOPIC,
     CTL_TOPIC,
@@ -46,10 +46,14 @@ def main() -> int:
     interval = float(os.environ.get("CE_SENSOR_INTERVAL", "5"))
     authorizer = authorizer_from_env()
 
-    # Swap MockDriver -> I2cDriver(bus, address) to read a real SHT31/BME280. Nothing else changes.
-    driver = MockDriver()
-    service = ClimateService(driver, authorizer, node_id, instance, interval=interval)
-    log.info("%s (%s) up on node %s; interval=%ss", SERVICE, instance, node_id[:16], interval)
+    # Auto-select the driver: a real I2C chip if one is wired (SHT3x/BME280/AHT20), else mock.
+    # Force with CE_SENSOR_DRIVER=mock|real|auto; switch live via the `set_source` control op.
+    source = os.environ.get("CE_SENSOR_DRIVER", "auto")
+    driver = select_driver(source)
+    service = ClimateService(driver, authorizer, node_id, instance, interval=interval,
+                             selector=select_driver, source=source)
+    log.info("%s (%s) up on node %s; interval=%ss source=%s driver=%s",
+             SERVICE, instance, node_id[:16], interval, source, type(driver).__name__)
 
     def announce_loop() -> None:
         while True:

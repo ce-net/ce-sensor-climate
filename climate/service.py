@@ -52,6 +52,7 @@ class ClimateService:
     def __init__(self, driver: Driver, authorizer: Authorizer, node_id: str,
                  instance: str = "climate", *, interval: float = DEFAULT_INTERVAL_SECONDS,
                  lease: float = DEFAULT_LEASE_SECONDS,
+                 selector: Optional[Callable[[str], Driver]] = None, source: str = "auto",
                  now: Callable[[], float] = time.time) -> None:
         self.driver = driver
         self.authorizer = authorizer
@@ -59,6 +60,10 @@ class ClimateService:
         self.instance = instance
         self.interval = interval
         self.lease = lease
+        # `selector(mode) -> Driver` enables on-demand mock/real switching via the API; when
+        # None the source is fixed to the constructed driver (e.g. in unit tests).
+        self.selector = selector
+        self.source_mode = source
         self._now = now
         self.subscribers: dict[str, float] = {}  # subscriber NodeId -> lease expiry (ts)
 
@@ -113,8 +118,11 @@ class ClimateService:
         if op == "read":
             return encode_reading(self.reading_frame())
         if op == "status":
-            return _ok(service=SERVICE, instance=self.instance,
-                       interval=self.interval, subscribers=len(self._live()))
+            return _ok(service=SERVICE, instance=self.instance, interval=self.interval,
+                       subscribers=len(self._live()), source=self.source_mode,
+                       driver=type(self.driver).__name__)
+        if op == "set_source":
+            return self._set_source(req.get("source"))
         if op == "subscribe":
             self.subscribers[msg.sender] = self._now() + self.lease
             return _ok(subscribed=True, interval=self.interval, lease=self.lease,
@@ -123,6 +131,21 @@ class ClimateService:
             self.subscribers.pop(msg.sender, None)
             return _ok(subscribed=False)
         return _err(f"unknown op: {op!r}")
+
+    def _set_source(self, source) -> bytes:
+        """Switch the data source on demand (auto/mock/real) so end-to-end tests can force
+        mock and real hardware stays plug-and-play."""
+        if self.selector is None:
+            return _err("source switching not available on this instance")
+        mode = str(source or "").lower()
+        if mode not in ("auto", "mock", "real"):
+            return _err("source must be one of auto|mock|real")
+        try:
+            self.driver = self.selector(mode)
+        except OSError as e:
+            return _err(f"cannot switch to {mode}: {e}")
+        self.source_mode = mode
+        return _ok(source=mode, driver=type(self.driver).__name__)
 
     # ----- data plane (push to cleared subscribers) -----
 

@@ -85,6 +85,36 @@ def test_unknown_op_and_bad_json():
     assert b"bad request" in svc.handle(_req(b"not json"))
 
 
+def test_set_source_switches_driver_on_demand_via_api():
+    calls = []
+
+    def selector(mode):
+        calls.append(mode)
+        return MockDriver(base_temp_c=99.0)  # a distinguishable driver
+
+    svc = ClimateService(MockDriver(), AllowAll(), SENSOR_NODE, "test",
+                         selector=selector, source="auto", now=lambda: 1000.0)
+    reply = json.loads(svc.handle(_req(b'{"op":"set_source","source":"mock","cap":"x"}')))
+    assert reply["source"] == "mock" and calls == ["mock"]
+    assert svc.source_mode == "mock"
+    # the switched-in driver is now the one producing readings
+    assert svc.reading_frame()["readings"][0]["value"] > 90.0
+
+
+def test_set_source_rejects_bad_mode_and_reports_in_status():
+    svc = ClimateService(MockDriver(), AllowAll(), SENSOR_NODE, "test",
+                         selector=lambda m: MockDriver(), source="auto")
+    assert b"one of auto|mock|real" in svc.handle(_req(b'{"op":"set_source","source":"x","cap":"x"}'))
+    status = json.loads(svc.handle(_req(b'{"op":"status","cap":"x"}')))
+    assert status["source"] == "auto" and status["driver"] == "MockDriver"
+
+
+def test_set_source_unavailable_without_selector():
+    # unit-test services (no selector) refuse the switch cleanly
+    assert b"not available" in _service(AllowAll()).handle(
+        _req(b'{"op":"set_source","source":"mock","cap":"x"}'))
+
+
 def test_announce_payload_advertises_by_name_not_address():
     ann = json.loads(_service(AllowAll()).announce_payload())
     assert ann["service"] == "ce-sensor-climate"

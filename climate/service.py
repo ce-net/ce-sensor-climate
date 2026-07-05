@@ -24,11 +24,13 @@ from typing import Callable, Optional
 
 from ce import Message
 
+from atech_hw import wiring
 from capauth import Authorizer
 from .driver import Driver
 from .reading import READING_SCHEMA, encode_reading
 
 SERVICE = "ce-sensor-climate"
+MODULE = "aht20"
 CTL_TOPIC = "ce.sensor/climate/ctl"
 DATA_TOPIC = "ce.sensor/climate/data"
 ANNOUNCE_TOPIC = "ce.sensor/announce"
@@ -53,6 +55,7 @@ class ClimateService:
                  instance: str = "climate", *, interval: float = DEFAULT_INTERVAL_SECONDS,
                  lease: float = DEFAULT_LEASE_SECONDS,
                  selector: Optional[Callable[[str], Driver]] = None, source: str = "auto",
+                 board: str = "8port", port: Optional[int] = None,
                  now: Callable[[], float] = time.time) -> None:
         self.driver = driver
         self.authorizer = authorizer
@@ -60,6 +63,8 @@ class ClimateService:
         self.instance = instance
         self.interval = interval
         self.lease = lease
+        self.board = board
+        self.port = port  # assigned by ce-arduino at startup (None until claimed)
         # `selector(mode) -> Driver` enables on-demand mock/real switching via the API; when
         # None the source is fixed to the constructed driver (e.g. in unit tests).
         self.selector = selector
@@ -98,6 +103,15 @@ class ClimateService:
             "metrics": ["temperature", "humidity"],
         }, separators=(",", ":")).encode("utf-8")
 
+    def wiring_info(self) -> dict:
+        """How to physically connect this module — module, board, assigned port, pin-by-pin."""
+        info = {"service": SERVICE, "module": MODULE, "board": self.board, "port": self.port,
+                "i2c_address": "0x38"}
+        info["wiring"] = wiring(self.board, MODULE, self.port) if self.port is not None else None
+        info["note"] = ("not yet assigned a port (claim one via ce-arduino)"
+                        if self.port is None else "connect the AHT20 to this port's pins")
+        return info
+
     # ----- control plane (cap-gated) -----
 
     def handle(self, msg: Message) -> Optional[bytes]:
@@ -117,10 +131,12 @@ class ClimateService:
 
         if op == "read":
             return encode_reading(self.reading_frame())
+        if op == "wiring":
+            return json.dumps(self.wiring_info()).encode("utf-8")
         if op == "status":
             return _ok(service=SERVICE, instance=self.instance, interval=self.interval,
                        subscribers=len(self._live()), source=self.source_mode,
-                       driver=type(self.driver).__name__)
+                       driver=type(self.driver).__name__, module=MODULE, port=self.port)
         if op == "set_source":
             return self._set_source(req.get("source"))
         if op == "subscribe":

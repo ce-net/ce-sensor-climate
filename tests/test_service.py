@@ -115,6 +115,14 @@ def test_set_source_unavailable_without_selector():
         _req(b'{"op":"set_source","source":"mock","cap":"x"}'))
 
 
+def test_wiring_reports_aht20_pins_for_the_assigned_port():
+    svc = ClimateService(MockDriver(), AllowAll(), SENSOR_NODE, "thermo", board="8port", port=1)
+    w = json.loads(svc.handle(_req(b'{"op":"wiring","cap":"x"}')))
+    assert w["module"] == "aht20" and w["port"] == 1 and w["i2c_address"] == "0x38"
+    assert w["wiring"] == [{"port": 1, "line": "A", "gpio": 5, "role": "SDA"},
+                           {"port": 1, "line": "B", "gpio": 4, "role": "SCL"}]
+
+
 def test_announce_payload_advertises_by_name_not_address():
     ann = json.loads(_service(AllowAll()).announce_payload())
     assert ann["service"] == "ce-sensor-climate"

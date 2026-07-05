@@ -72,7 +72,7 @@ def main() -> int:
                 client.publish(ANNOUNCE_TOPIC, service.announce_payload())
             except ce.CeError as e:
                 log.warning("announce failed: %s", e)
-            _sleep(interval * 2)
+            _sleep(3.0)  # steady discovery cadence, independent of the reading interval
 
     def push_loop() -> None:
         while True:

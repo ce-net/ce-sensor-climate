@@ -53,18 +53,23 @@ def main() -> int:
     source = os.environ.get("CE_SENSOR_DRIVER", "auto")
     driver = select_driver(source)
 
-    # Coordinate a board port through ce-arduino so we never collide with other modules.
     board = os.environ.get("CE_ARDUINO_BOARD", "8port")
-    claim = claim_port(client, MODULE, instance, CTL_TOPIC, board=board,
-                       cap=os.environ.get("CE_ARDUINO_CAP", ""))
-    port = claim["port"] if claim else None
     service = ClimateService(driver, authorizer, node_id, instance, interval=interval,
-                             selector=select_driver, source=source, board=board, port=port)
-    if claim:
-        log.info("%s (%s) claimed port %s on %s; wiring=%s", SERVICE, instance, port, board,
-                 claim.get("wiring"))
+                             selector=select_driver, source=source, board=board, port=None)
     log.info("%s (%s) up on node %s; interval=%ss source=%s driver=%s",
              SERVICE, instance, node_id[:16], interval, source, type(driver).__name__)
+
+    # Coordinate a board port through ce-arduino in the BACKGROUND so startup never blocks on
+    # the coordinator; the port + wiring fill in once it answers (service tolerates port=None).
+    def claim_bg():
+        claim = claim_port(client, MODULE, instance, CTL_TOPIC, board=board,
+                           cap=os.environ.get("CE_ARDUINO_CAP", ""))
+        if claim:
+            service.port = claim["port"]
+            log.info("%s (%s) claimed port %s on %s; wiring=%s", SERVICE, instance,
+                     claim["port"], board, claim.get("wiring"))
+
+    threading.Thread(target=claim_bg, name="claim", daemon=True).start()
 
     def announce_loop() -> None:
         while True:

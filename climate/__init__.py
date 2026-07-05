@@ -11,6 +11,7 @@ from .driver import (
     detect_i2c_driver,
     select_driver,
 )
+from .atech import AtechCache, AtechSerialDriver, detect_atech_serial, parse_atech_line
 from .reading import READING_SCHEMA, decode_reading, encode_reading
 from .service import ClimateService
 
@@ -23,6 +24,10 @@ __all__ = [
     "Sht3xDriver",
     "Bme280Driver",
     "Aht20Driver",
+    "AtechSerialDriver",
+    "AtechCache",
+    "parse_atech_line",
+    "detect_atech_serial",
     "detect_i2c_driver",
     "select_driver",
     "READING_SCHEMA",

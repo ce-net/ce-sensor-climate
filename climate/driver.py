@@ -195,13 +195,15 @@ class Bme280Driver:
         return Sample(round(temp, 2), round(max(0.0, min(100.0, h)), 2))
 
 
-# Probe order: (address, factory) — first that responds AND reads cleanly wins.
+# Probe order: (address, factory) — first that responds AND reads cleanly wins. AHT20 (0x38)
+# is the atech temperature/humidity module (docs/atech-modules.md), so it is tried first; the
+# others are generic (non-atech) chips supported as a convenience.
 _PROBES = [
+    (0x38, lambda bus, a: Aht20Driver(bus, a)),   # atech AHT20 module
     (0x44, lambda bus, a: Sht3xDriver(bus, a)),
     (0x45, lambda bus, a: Sht3xDriver(bus, a)),
     (0x76, lambda bus, a: Bme280Driver(bus, a)),
     (0x77, lambda bus, a: Bme280Driver(bus, a)),
-    (0x38, lambda bus, a: Aht20Driver(bus, a)),
 ]
 
 
@@ -235,16 +237,27 @@ SOURCE_MODES = ("auto", "mock", "real")
 
 def select_driver(mode: str = "auto", buses=(1, 0)) -> Driver:
     """Pick the driver by source mode — switchable on demand (startup env or the live API):
-    ``auto`` = real chip if detected else mock; ``mock`` forces synthetic; ``real`` (alias
-    ``i2c``) requires a real chip (raises if none). Makes hardware plug-and-play while letting
-    an end-to-end test force mock with no hardware.
+
+    - ``auto``  : atech serial board if present, else a direct I2C chip, else mock.
+    - ``mock``  : synthetic data (lets an end-to-end test run with no hardware).
+    - ``real`` / ``atech`` : the atech USB-serial AHT20 (falls back to direct I2C); raises if
+      no hardware — this is the SDK-faithful atech-module path (docs/atech-modules.md).
+    - ``i2c``   : a temp/humidity chip wired directly to the node's I2C header (AHT20 first).
     """
     mode = (mode or "auto").lower()
     if mode == "mock":
         return MockDriver()
+
+    if mode in ("auto", "real", "atech"):
+        from .atech import detect_atech_serial  # lazy: avoids a circular import
+        atech = detect_atech_serial()
+        if atech is not None:
+            return atech
+
     real = detect_i2c_driver(buses)
     if real is not None:
         return real
-    if mode in ("real", "i2c"):
-        raise OSError("no supported I2C temp/humidity sensor found on buses " + str(buses))
+
+    if mode in ("real", "atech", "i2c"):
+        raise OSError("no atech serial board or I2C temp/humidity sensor found")
     return MockDriver()
